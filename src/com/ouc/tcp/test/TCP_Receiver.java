@@ -13,7 +13,7 @@ import java.io.IOException;
 public class TCP_Receiver extends TCP_Receiver_ADT {
 	
 	private TCP_PACKET ackPack;	//回复的ACK报文段
-	int sequence=1;//用于记录当前待接收的包序号，注意包序号不完全是
+	int sequence=0;//用于记录当前待接收的包序号，注意包序号不完全是 默认为0
 		
 	/*构造函数*/
 	public TCP_Receiver() {
@@ -24,25 +24,36 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 	@Override
 	//接收到数据报：检查校验和，设置回复的ACK报文段
 	public void rdt_recv(TCP_PACKET recvPack) {
-		//检查校验码，生成ACK
-		if(CheckSum.computeChkSum(recvPack) == recvPack.getTcpH().getTh_sum()) {
+		//检查校验码，生成ACK 并且 序号为0或者1
+		int ackNum = recvPack.getTcpH().getTh_seq();
+		if(CheckSum.computeChkSum(recvPack) == 0 && (ackNum == 1 || ackNum == 0) ){
 			//生成ACK报文段（设置确认号）
-			tcpH.setTh_ack(recvPack.getTcpH().getTh_seq());
+//			tcpH.setTh_ack(recvPack.getTcpH().getTh_seq() ^ 1);
+			tcpH.setTh_ack(1); // 1表示ACK
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+			tcpH.setTh_sum((short) 0); // 计算校验和之前先保证为sum字段为0
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+			tcpH.setTh_eflag((byte) 0); // 信道无错误
+			// 更新带有校验和的ackPack
+			ackPack.setTcpH(tcpH);
 			//回复ACK报文段
-			reply(ackPack);			
-			
+			reply(ackPack);
+
 			//将接收到的正确有序的数据插入data队列，准备交付
-			dataQueue.add(recvPack.getTcpS().getData());				
-			sequence++;
+			if(recvPack.getTcpH().getTh_seq() == sequence){
+				sequence = recvPack.getTcpH().getTh_seq() ^ 1; // 更新sequence 0 1之间转换
+				dataQueue.add(recvPack.getTcpS().getData());
+			}
 		}else{
 			System.out.println("Recieve Computed: "+CheckSum.computeChkSum(recvPack));
 			System.out.println("Recieved Packet"+recvPack.getTcpH().getTh_sum());
 			System.out.println("Problem: Packet Number: "+recvPack.getTcpH().getTh_seq()+" + InnerSeq:  "+sequence);
-			tcpH.setTh_ack(-1);
+			tcpH.setTh_ack(-1); // 发送NAK 让发送方重传
+			tcpH.setTh_eflag((byte)1);
 			ackPack = new TCP_PACKET(tcpH, tcpS, recvPack.getSourceAddr());
+			tcpH.setTh_sum((short) 0);
 			tcpH.setTh_sum(CheckSum.computeChkSum(ackPack));
+			ackPack.setTcpH(tcpH);
 			//回复ACK报文段
 			reply(ackPack);
 		}
@@ -87,7 +98,7 @@ public class TCP_Receiver extends TCP_Receiver_ADT {
 	//回复ACK报文段
 	public void reply(TCP_PACKET replyPack) {
 		//设置错误控制标志
-		tcpH.setTh_eflag((byte)0);	//eFlag=0，信道无错误
+//		tcpH.setTh_eflag((byte)0);	//eFlag=0，信道无错误
 				
 		//发送数据报
 		client.send(replyPack);

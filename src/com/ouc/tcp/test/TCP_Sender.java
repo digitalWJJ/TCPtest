@@ -10,6 +10,7 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	
 	private TCP_PACKET tcpPack;	//待发送的TCP数据报
 	private volatile int flag = 0;
+	private int seq = 0; // RDT2.1 发送方在01之间切换
 	
 	/*构造函数*/
 	public TCP_Sender() {
@@ -22,10 +23,13 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	public void rdt_send(int dataIndex, int[] appData) {
 		
 		//生成TCP数据报（设置序号和数据字段/校验和),注意打包的顺序
-		tcpH.setTh_seq(dataIndex * appData.length + 1);//包序号设置为字节流号：
+//		tcpH.setTh_seq(dataIndex * appData.length + 1);//包序号设置为字节流号：
+		tcpH.setTh_seq(seq);
+		seq = seq == 0? 1 : 0; // 更新seq的值
 		tcpS.setData(appData);
 		tcpPack = new TCP_PACKET(tcpH, tcpS, destinAddr);		
-		//更新带有checksum的TCP 报文头		
+		//更新带有checksum的TCP 报文头
+		tcpH.setTh_sum((short)0); // 计算校验和之前先保证为sum字段为0
 		tcpH.setTh_sum(CheckSum.computeChkSum(tcpPack));
 		tcpPack.setTcpH(tcpH);
 		
@@ -56,11 +60,14 @@ public class TCP_Sender extends TCP_Sender_ADT {
 		if(!ackQueue.isEmpty()){
 			int currentAck=ackQueue.poll();
 			// System.out.println("CurrentAck: "+currentAck);
-			if (currentAck == tcpPack.getTcpH().getTh_seq()){
+//			if (currentAck == (tcpPack.getTcpH().getTh_seq()^1)){
+			if(currentAck == 1){
 				System.out.println("Clear: "+tcpPack.getTcpH().getTh_seq());
 				flag = 1;
 				//break;
-			}else{
+			}
+			// 是个NAK 就重传
+			else{
 				System.out.println("Retransmit: "+tcpPack.getTcpH().getTh_seq());
 				udt_send(tcpPack);
 				flag = 0;
@@ -71,13 +78,15 @@ public class TCP_Sender extends TCP_Sender_ADT {
 	@Override
 	//接收到ACK报文：检查校验和，将确认号插入ack队列;NACK的确认号为－1；不需要修改
 	public void recv(TCP_PACKET recvPack) {
-		System.out.println("Receive ACK Number： "+ recvPack.getTcpH().getTh_ack());
-		ackQueue.add(recvPack.getTcpH().getTh_ack());
-	    System.out.println();	
-	   
-	    //处理ACK报文
-	    waitACK();
-	   
+		// 检验校验和
+		if(CheckSum.computeChkSum(recvPack) == 0){
+			System.out.println("Receive ACK Number： "+ recvPack.getTcpH().getTh_ack());
+			ackQueue.add(recvPack.getTcpH().getTh_ack());
+			System.out.println();
+			// 处理ACK报文
+			waitACK();
+		}
+	   // 校验和出现了错误 直接进行丢弃
 	}
 	
 }
