@@ -43,10 +43,6 @@ public class CheckSum {
 			}
 		}
 		checkSum = ~checkSum;
-		System.out.println(Integer.toBinaryString(checkSum));
-		//取低16位
-		System.out.println(Integer.toHexString(checkSum).substring(4));
-		
 		
 		return (short) checkSum;
 	}
